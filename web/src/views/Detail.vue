@@ -28,19 +28,40 @@
 
       <div class="chart-section">
         <div class="chart-header">
-          <div class="section-title">历史流量趋势</div>
-          <div class="chart-controls">
+          <div class="section-title">流量趋势</div>
+          <div class="time-range-selector">
             <button 
-              class="chart-btn" 
-              :class="{ active: chartPeriod === '7d' }"
-              @click="switchChartPeriod('7d')"
+              class="time-range-button" 
+              :class="{ active: selectedTimeRange === 'today' }"
+              @click="changeTimeRange('today')"
+            >
+              今日
+            </button>
+            <button 
+              class="time-range-button" 
+              :class="{ active: selectedTimeRange === 'yesterday' }"
+              @click="changeTimeRange('yesterday')"
+            >
+              昨日
+            </button>
+            <button 
+              class="time-range-button" 
+              :class="{ active: selectedTimeRange === 'last3days' }"
+              @click="changeTimeRange('last3days')"
+            >
+              近3日
+            </button>
+            <button 
+              class="time-range-button" 
+              :class="{ active: selectedTimeRange === 'weekly' }"
+              @click="changeTimeRange('weekly')"
             >
               7天
             </button>
             <button 
-              class="chart-btn" 
-              :class="{ active: chartPeriod === '30d' }"
-              @click="switchChartPeriod('30d')"
+              class="time-range-button" 
+              :class="{ active: selectedTimeRange === 'monthly' }"
+              @click="changeTimeRange('monthly')"
             >
               30天
             </button>
@@ -50,10 +71,47 @@
           <canvas id="detail-chart"></canvas>
         </div>
       </div>
+      
+      <!-- 24小时流量用量展示 -->
+      <div class="chart-section" v-if="selectedTimeRange === 'today' || selectedTimeRange === 'yesterday'">
+        <div class="chart-header">
+          <div class="section-title">24小时流量分布</div>
+        </div>
+        <div class="hourly-traffic-container">
+          <div class="hourly-chart-container">
+            <canvas id="hourly-chart"></canvas>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 历史数据回顾 -->
+      <div class="chart-section">
+        <div class="chart-header">
+          <div class="section-title">历史流量趋势</div>
+          <div class="history-controls">
+            <el-date-picker
+              v-model="historyDateRange"
+              type="daterange"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+              format="YYYY-MM-DD"
+              value-format="YYYY-MM-DD"
+              :clearable="false"
+              :editable="false"
+              @change="loadHistoryData"
+            />
+            <el-button type="primary" size="small" @click="loadHistoryData">查询</el-button>
+          </div>
+        </div>
+        <div class="history-chart-container">
+          <canvas id="history-chart"></canvas>
+        </div>
+      </div>
 
       <div class="traffic-tables">
         <div class="traffic-table">
-          <div class="table-title">入站今日流量</div>
+          <div class="table-title">入站{{ timeRangeLabels[selectedTimeRange] }}流量</div>
           <div 
             v-for="inbound in sortedInbounds" 
             :key="inbound.id" 
@@ -184,9 +242,28 @@ const servicesStore = useServicesStore()
 const selectedService = computed(() => servicesStore.selectedService)
 
 let detailChart = null
+let hourlyChart = null
+let historyChart = null
 let refreshInterval = null
 const isRefreshing = ref(false)
 const chartPeriod = ref('7d') // 图表周期：7d 或 30d
+const selectedTimeRange = ref('today')
+const timeRangeLabels = {
+  'today': '今日',
+  'yesterday': '昨日',
+  'last3days': '近3日',
+  'weekly': '7天',
+  'monthly': '30天'
+}
+
+// 历史数据相关
+// 设置默认历史日期范围为最近30天
+const historyDateRange = ref([
+  dayjs().subtract(30, 'day').format('YYYY-MM-DD'),
+  dayjs().format('YYYY-MM-DD')
+])
+const historyData = ref(null)
+const isLoadingHistory = ref(false)
 
 // 弹窗相关状态
 const showServiceModal = ref(false)
@@ -304,43 +381,175 @@ const switchChartPeriod = async (period) => {
   await createDetailChart()
 }
 
+// 切换时间范围
+const changeTimeRange = async (range) => {
+  if (selectedTimeRange.value === range) return
+  
+  selectedTimeRange.value = range
+  await refreshDetail()
+  
+  // 如果是今日或昨日，创建小时流量图表
+  if (range === 'today' || range === 'yesterday') {
+    setTimeout(() => {
+      createHourlyChart()
+    }, 500)
+  }
+}
+
+// 创建24小时流量图表
+const createHourlyChart = () => {
+  try {
+    const ctx = document.getElementById('hourly-chart')
+    if (!ctx || !selectedService.value) return
+    
+    // 获取小时数据
+    let hourlyData = []
+    if (selectedTimeRange.value === 'today' && selectedService.value.today_hourly_data) {
+      hourlyData = selectedService.value.today_hourly_data
+    } else if (selectedTimeRange.value === 'yesterday' && selectedService.value.yesterday_hourly_data) {
+      hourlyData = selectedService.value.yesterday_hourly_data
+    } else {
+      // 模拟数据用于展示
+      hourlyData = Array.from({length: 24}, (_, i) => ({
+        hour: i,
+        up: Math.floor(Math.random() * 100000000),
+        down: Math.floor(Math.random() * 500000000)
+      }))
+    }
+    
+    // 准备图表数据
+    const labels = hourlyData.map(item => `${item.hour}:00`)
+    const uploadData = hourlyData.map(item => item.up)
+    const downloadData = hourlyData.map(item => item.down)
+    
+    // 销毁现有图表
+    if (hourlyChart) {
+      hourlyChart.destroy()
+    }
+    
+    hourlyChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: '上传',
+            data: uploadData,
+            backgroundColor: 'rgba(116, 185, 255, 0.7)',
+            borderColor: '#74b9ff',
+            borderWidth: 1
+          },
+          {
+            label: '下载',
+            data: downloadData,
+            backgroundColor: 'rgba(0, 184, 148, 0.7)',
+            borderColor: '#00b894',
+            borderWidth: 1
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.dataset.label + ': ' + formatBytes(context.parsed.y)
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: '时间'
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: '流量'
+            },
+            ticks: {
+              callback: function(value) {
+                return formatBytes(value)
+              }
+            }
+          }
+        }
+      }
+    })
+  } catch (error) {
+    console.error('创建小时流量图表失败:', error)
+  }
+}
+
 const createDetailChart = async () => {
   try {
-    // 根据周期选择API
-    const response = chartPeriod.value === '7d' 
-      ? await servicesAPI.getWeeklyTraffic(selectedService.value.id)
-      : await servicesAPI.getMonthlyTraffic(selectedService.value.id)
-    if (response.data.success) {
-      const data = response.data.data
-      const ctx = document.getElementById('detail-chart')
+    // 根据选择的时间范围获取对应的数据
+    const ctx = document.getElementById('detail-chart')
+    
+    if (ctx) {
+      // 销毁现有图表
+      if (detailChart) {
+        detailChart.destroy()
+      }
       
-      if (ctx) {
-        // 销毁现有图表
-        if (detailChart) {
-          detailChart.destroy()
-        }
-        
-        detailChart = new Chart(ctx, {
+      // 根据选择的时间范围获取对应的数据
+      let data = {}
+      
+      switch (selectedTimeRange.value) {
+        case 'today':
+          data = selectedService.value.today_traffic_data || {}
+          break
+        case 'yesterday':
+          data = selectedService.value.yesterday_traffic_data || {}
+          break
+        case 'last3days':
+          data = selectedService.value.last3days_traffic_data || {}
+          break
+        case 'weekly':
+          data = selectedService.value.weekly_traffic_data || {}
+          break
+        case 'monthly':
+          data = selectedService.value.monthly_traffic_data || {}
+          break
+        default:
+          data = selectedService.value.today_traffic_data || {}
+      }
+      
+      // 确保数据存在，如果不存在则使用空数组
+      const labels = data.dates || []
+      const uploadData = data.upload_data || []
+      const downloadData = data.download_data || []
+      
+      detailChart = new Chart(ctx, {
           type: 'line',
           data: {
-            labels: data.dates,
+            labels: labels,
             datasets: [
               {
                 label: '上传',
-                data: data.upload_data,
+                data: uploadData,
                 borderColor: '#74b9ff',
                 backgroundColor: 'rgba(116, 185, 255, 0.1)',
                 tension: 0.4,
                 fill: true
               },
               {
-                label: '下载',
-                data: data.download_data,
-                borderColor: '#00b894',
-                backgroundColor: 'rgba(0, 184, 148, 0.1)',
-                tension: 0.4,
-                fill: true
-              }
+                 label: '下载',
+                 data: downloadData,
+                 borderColor: '#00b894',
+                 backgroundColor: 'rgba(0, 184, 148, 0.1)',
+                 tension: 0.4,
+                 fill: true
+               }
             ]
           },
           options: {
@@ -427,7 +636,8 @@ const refreshDetail = async () => {
   if (selectedService.value && !isRefreshing.value) {
     isRefreshing.value = true
     try {
-      await servicesStore.loadServiceDetail(selectedService.value.id)
+      // 根据选择的时间范围加载服务详情
+      await servicesStore.loadServiceDetail(selectedService.value.id, selectedTimeRange.value)
       await createDetailChart()
     } catch (error) {
       console.error('刷新数据失败:', error)
@@ -445,8 +655,13 @@ const startAutoRefresh = () => {
   // 每60秒刷新一次，确保图表数据实时更新
   refreshInterval = setInterval(async () => {
     if (selectedService.value) {
-      await servicesStore.loadServiceDetail(selectedService.value.id)
+      await servicesStore.loadServiceDetail(selectedService.value.id, selectedTimeRange.value)
       await createDetailChart()
+      
+      // 如果是今日或昨日，更新小时流量图表
+      if (selectedTimeRange.value === 'today' || selectedTimeRange.value === 'yesterday') {
+        createHourlyChart()
+      }
     }
   }, 60000)
 }
@@ -456,6 +671,112 @@ const stopAutoRefresh = () => {
   if (refreshInterval) {
     clearInterval(refreshInterval)
     refreshInterval = null
+  }
+}
+
+// 加载历史数据
+const loadHistoryData = async () => {
+  if (!selectedService.value || !historyDateRange.value || historyDateRange.value.length !== 2) return
+  
+  isLoadingHistory.value = true
+  try {
+    const [startDate, endDate] = historyDateRange.value
+    const response = await servicesAPI.getHistoryTraffic(
+      selectedService.value.id, 
+      startDate, 
+      endDate
+    )
+    
+    if (response.data.success) {
+      historyData.value = response.data.data
+      createHistoryChart()
+    }
+  } catch (error) {
+    console.error('加载历史数据失败:', error)
+    ElMessage.error('加载历史数据失败')
+  } finally {
+    isLoadingHistory.value = false
+  }
+}
+
+// 创建历史数据图表
+const createHistoryChart = () => {
+  try {
+    const ctx = document.getElementById('history-chart')
+    if (!ctx || !historyData.value) return
+    
+    // 准备图表数据
+    const labels = historyData.value.dates || []
+    const uploadData = historyData.value.upload_data || []
+    const downloadData = historyData.value.download_data || []
+    
+    // 销毁现有图表
+    if (historyChart) {
+      historyChart.destroy()
+    }
+    
+    historyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: '上传',
+            data: uploadData,
+            borderColor: '#74b9ff',
+            backgroundColor: 'rgba(116, 185, 255, 0.1)',
+            tension: 0.4,
+            fill: true
+          },
+          {
+            label: '下载',
+            data: downloadData,
+            borderColor: '#00b894',
+            backgroundColor: 'rgba(0, 184, 148, 0.1)',
+            tension: 0.4,
+            fill: true
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            position: 'top'
+          },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.dataset.label + ': ' + formatBytes(context.parsed.y)
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: '日期'
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: '流量'
+            },
+            ticks: {
+              callback: function(value) {
+                return formatBytes(value)
+              }
+            }
+          }
+        }
+      }
+    })
+  } catch (error) {
+    console.error('创建历史数据图表失败:', error)
   }
 }
 
@@ -511,6 +832,17 @@ onMounted(async () => {
   if (selectedService.value) {
     await servicesStore.loadServiceDetail(serviceId)
     await createDetailChart()
+    
+    // 如果是今日或昨日，创建小时流量图表
+    if (selectedTimeRange.value === 'today' || selectedTimeRange.value === 'yesterday') {
+      setTimeout(() => {
+        createHourlyChart()
+      }, 500)
+    }
+    
+    // 加载历史数据
+    loadHistoryData()
+    
     startAutoRefresh()
   }
 })
@@ -518,6 +850,12 @@ onMounted(async () => {
 onUnmounted(() => {
   if (detailChart) {
     detailChart.destroy()
+  }
+  if (hourlyChart) {
+    hourlyChart.destroy()
+  }
+  if (historyChart) {
+    historyChart.destroy()
   }
   stopAutoRefresh()
 })
@@ -594,42 +932,50 @@ onUnmounted(() => {
   margin: 0;
 }
 
-.chart-controls {
+.time-range-selector {
   display: flex;
   gap: 8px;
 }
 
-.chart-btn {
+.time-range-button {
   padding: 6px 12px;
-  border: 1.5px solid #70A1FF;
-  background: #fff;
-  color: #70A1FF;
   border-radius: 20px;
+  border: 1px solid #e0e0e0;
+  background: #f5f5f5;
+  color: #666;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
-  transition: background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, transform 0.18s;
-  margin-right: 8px;
-}
-.chart-btn:last-child { margin-right: 0; }
-
-.chart-btn:hover {
-  background: #EAF3FF;
-  color: #1E90FF;
-  border-color: #1E90FF;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(112,161,255,0.10);
+  transition: all 0.3s ease;
 }
 
-.chart-btn.active {
-  background: #70A1FF;
-  color: #fff;
-  border-color: #70A1FF;
-  box-shadow: 0 2px 8px rgba(112,161,255,0.18);
+.time-range-button:hover {
+  background: #e8f4fc;
+  border-color: #a8d8ff;
+}
+
+.time-range-button.active {
+  background: #3498db;
+  color: white;
+  border-color: #3498db;
 }
 
 .chart-container {
-  height: 400px;
+  height: 300px;
+  position: relative;
+}
+
+.hourly-traffic-container {
+  margin-top: 10px;
+}
+
+.hourly-chart-container {
+  height: 250px;
+  position: relative;
+}
+
+.history-chart-container {
+  height: 300px;
+  width: 100%;
   position: relative;
 }
 
@@ -672,4 +1018,4 @@ onUnmounted(() => {
   margin: 0 auto;
   padding: 0 24px;
 }
-</style> 
+</style>

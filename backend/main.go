@@ -126,6 +126,41 @@ func init() {
 	}
 }
 
+// 清理历史数据
+func cleanupHistoricalData() {
+	logger.Info("开始清理历史数据...")
+	
+	// 计算31天前的日期
+	thirtyOneDaysAgo := time.Now().AddDate(0, 0, -31).Format("2006-01-02")
+	
+	// 清理历史流量数据
+	if err := db.CleanupHistoricalData(thirtyOneDaysAgo); err != nil {
+		logger.Errorf("清理历史数据失败: %v", err)
+	} else {
+		logger.Infof("成功清理 %s 之前的历史数据", thirtyOneDaysAgo)
+	}
+}
+
+// 启动定时清理任务
+func startCleanupScheduler() {
+	// 每天凌晨3点执行清理
+	go func() {
+		for {
+			now := time.Now()
+			next := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, now.Location())
+			if now.After(next) {
+				next = next.Add(24 * time.Hour)
+			}
+			
+			sleepDuration := next.Sub(now)
+			logger.Infof("下次数据清理将在 %v 后执行", sleepDuration)
+			time.Sleep(sleepDuration)
+			
+			cleanupHistoricalData()
+		}
+	}()
+}
+
 func main() {
 	logger.Info("启动XTrafficDash...")
 	logger.Infof("监听端口: %d", config.ListenPort)
@@ -152,6 +187,9 @@ func main() {
 	// 启动服务器
 	addr := fmt.Sprintf("0.0.0.0:%d", config.ListenPort)
 	logger.Infof("服务器启动在地址 %s", addr)
+
+	// 启动定时清理任务
+	startCleanupScheduler()
 
 	// 启动hy2流量同步定时任务（自动执行）
 	go startHy2SyncTask()

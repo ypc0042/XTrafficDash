@@ -136,8 +136,45 @@ func OpenDatabase(dbPath string) (*Database, error) {
 }
 
 // 关闭数据库连接
-func (d *Database) Close() error {
-	return d.db.Close()
+func (db *Database) Close() error {
+	return db.db.Close()
+}
+
+// 清理历史数据（保留31天）
+func (db *Database) CleanupHistoricalData(cutoffDate string) error {
+	// 开始事务
+	tx, err := db.db.Begin()
+	if err != nil {
+		return fmt.Errorf("开始事务失败: %v", err)
+	}
+	
+	// 清理历史流量数据
+	_, err = tx.Exec("DELETE FROM traffic_history WHERE date < ?", cutoffDate)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("清理历史流量数据失败: %v", err)
+	}
+	
+	// 清理历史客户端流量数据
+	_, err = tx.Exec("DELETE FROM client_traffic_history WHERE date < ?", cutoffDate)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("清理历史客户端流量数据失败: %v", err)
+	}
+	
+	// 清理历史入站流量数据
+	_, err = tx.Exec("DELETE FROM inbound_traffic_history WHERE date < ?", cutoffDate)
+	if err != nil {
+		tx.Rollback()
+		return fmt.Errorf("清理历史入站流量数据失败: %v", err)
+	}
+	
+	// 提交事务
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("提交事务失败: %v", err)
+	}
+	
+	return nil
 }
 
 // 初始化数据库表

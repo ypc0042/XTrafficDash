@@ -31,14 +31,25 @@
       </div>
     </div>
 
+    <div class="time-range-selector">
+      <button 
+        v-for="range in timeRanges" 
+        :key="range.value" 
+        :class="['time-range-button', { active: selectedTimeRange === range.value }]"
+        @click.stop="changeTimeRange(range.value)"
+      >
+        {{ range.label }}
+      </button>
+    </div>
+    
     <div class="stats-grid">
       <div class="stat-item">
-        <div class="stat-value">{{ formatBytes(service.today_inbound_up) }}</div>
-        <div class="stat-label">今日上传</div>
+        <div class="stat-value">{{ formatBytes(getTrafficValue('up')) }}</div>
+        <div class="stat-label">{{ timeRangeLabels[selectedTimeRange] }}上传</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">{{ formatBytes(service.today_inbound_down) }}</div>
-        <div class="stat-label">今日下载</div>
+        <div class="stat-value">{{ formatBytes(getTrafficValue('down')) }}</div>
+        <div class="stat-label">{{ timeRangeLabels[selectedTimeRange] }}下载</div>
       </div>
       <div class="stat-item">
         <div class="stat-value">{{ service.inbound_count }}</div>
@@ -89,6 +100,46 @@ const props = defineProps({
 
 defineEmits(['select', 'delete'])
 
+// 时间范围选择相关
+const selectedTimeRange = ref('today') // 默认显示今日数据
+const timeRanges = [
+  { label: '今日', value: 'today' },
+  { label: '昨日', value: 'yesterday' },
+  { label: '近3日', value: 'last3days' }
+]
+
+// 时间范围对应的标签
+const timeRangeLabels = {
+  'today': '今日',
+  'yesterday': '昨日',
+  'last3days': '近3日'
+}
+
+// 根据选择的时间范围获取对应的流量数据
+const getTrafficValue = (direction) => {
+  if (!props.service) return 0
+  
+  switch (selectedTimeRange.value) {
+    case 'today':
+      return direction === 'up' ? props.service.today_inbound_up || 0 : props.service.today_inbound_down || 0
+    case 'yesterday':
+      return direction === 'up' ? props.service.yesterday_inbound_up || 0 : props.service.yesterday_inbound_down || 0
+    case 'last3days':
+      return direction === 'up' ? props.service.last3days_inbound_up || 0 : props.service.last3days_inbound_down || 0
+    default:
+      return 0
+  }
+}
+
+// 切换时间范围
+const changeTimeRange = (range) => {
+  selectedTimeRange.value = range
+  // 防止事件冒泡触发卡片点击
+  event.stopPropagation()
+  // 更新图表数据
+  updateChartData(range)
+}
+
 let chart = null
 
 // 弹窗相关状态
@@ -131,6 +182,73 @@ const saveName = async (newName) => {
 // 关闭弹窗
 const closeModal = () => {
   showEditModal.value = false
+}
+
+// 更新图表数据
+const updateChartData = (timeRange) => {
+  if (!chart) return
+  
+  // 根据时间范围获取对应的数据
+  let labels, uploadData, downloadData
+  
+  switch (timeRange) {
+    case 'today':
+      if (props.service.today_traffic_data) {
+        labels = props.service.today_traffic_data.dates
+        uploadData = props.service.today_traffic_data.upload_data
+        downloadData = props.service.today_traffic_data.download_data
+      } else if (props.trafficData) {
+        labels = props.trafficData.dates
+        uploadData = props.trafficData.upload_data
+        downloadData = props.trafficData.download_data
+      }
+      break
+    case 'yesterday':
+      if (props.service.yesterday_traffic_data) {
+        labels = props.service.yesterday_traffic_data.dates
+        uploadData = props.service.yesterday_traffic_data.upload_data
+        downloadData = props.service.yesterday_traffic_data.download_data
+      } else if (props.trafficData) {
+        labels = props.trafficData.dates
+        uploadData = props.trafficData.upload_data
+        downloadData = props.trafficData.download_data
+      }
+      break
+    case 'last3days':
+      if (props.service.last3days_traffic_data) {
+        labels = props.service.last3days_traffic_data.dates
+        uploadData = props.service.last3days_traffic_data.upload_data
+        downloadData = props.service.last3days_traffic_data.download_data
+      } else if (props.trafficData) {
+        labels = props.trafficData.dates
+        uploadData = props.trafficData.upload_data
+        downloadData = props.trafficData.download_data
+      }
+      break
+    default:
+      if (props.trafficData) {
+        labels = props.trafficData.dates
+        uploadData = props.trafficData.upload_data
+        downloadData = props.trafficData.download_data
+      } else {
+        labels = []
+        uploadData = []
+        downloadData = []
+      }
+  }
+  
+  // 确保数据存在
+  if (!labels || !uploadData || !downloadData) {
+    labels = []
+    uploadData = []
+    downloadData = []
+  }
+  
+  // 更新图表数据
+  chart.data.labels = labels
+  chart.data.datasets[0].data = uploadData
+  chart.data.datasets[1].data = downloadData
+  chart.update()
 }
 
 const createChart = () => {
@@ -234,6 +352,51 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.service-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.service-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+}
+
+/* 时间范围选择器样式 */
+.time-range-selector {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 15px;
+  gap: 8px;
+}
+
+.time-range-button {
+  background: #f5f7fa;
+  border: 1px solid #e4e7eb;
+  border-radius: 15px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+  color: #4a5568;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.time-range-button:hover {
+  background: #edf2f7;
+}
+
+.time-range-button.active {
+  background: #3498db;
+  color: white;
+  border-color: #3498db;
+}
+
 .name-container {
   display: flex;
   align-items: center;
@@ -289,4 +452,4 @@ onUnmounted(() => {
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(255,107,129,0.18);
 }
-</style> 
+</style>

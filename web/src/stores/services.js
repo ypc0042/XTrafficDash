@@ -36,18 +36,66 @@ export const useServicesStore = defineStore('services', () => {
     selectedService.value = service
   }
 
-  const loadServiceDetail = async (serviceId) => {
+  const loadServiceDetail = async (serviceId, timeRange = 'today') => {
     try {
-      const response = await servicesAPI.getServiceDetail(serviceId)
+      // 根据时间范围构建API请求
+      let response
+      if (timeRange === 'today') {
+        response = await servicesAPI.getServiceDetail(serviceId)
+      } else {
+        response = await servicesAPI.getServiceDetailWithTimeRange(serviceId, timeRange)
+      }
+      
       if (response.data.success) {
         selectedService.value = {
           ...selectedService.value,
-          ...response.data.data
+          ...response.data.data,
+          currentTimeRange: timeRange // 记录当前选择的时间范围
         }
+        
+        // 加载不同时间范围的流量数据
+        await loadTimeRangeTraffic(serviceId)
       }
     } catch (error) {
       console.error('加载服务详情失败:', error)
     }
+  }
+  
+  // 加载不同时间范围的流量数据
+  const loadTimeRangeTraffic = async (serviceId) => {
+    try {
+      // 加载今日流量数据
+      const todayResponse = await servicesAPI.getTodayTraffic(serviceId)
+      if (todayResponse.data.success) {
+        selectedService.value.today_traffic_data = todayResponse.data.data
+        selectedService.value.today_inbound_up = calculateTotalTraffic(todayResponse.data.data.upload_data)
+        selectedService.value.today_inbound_down = calculateTotalTraffic(todayResponse.data.data.download_data)
+      }
+      
+      // 加载昨日流量数据
+      const yesterdayResponse = await servicesAPI.getYesterdayTraffic(serviceId)
+      if (yesterdayResponse.data.success) {
+        selectedService.value.yesterday_traffic_data = yesterdayResponse.data.data
+        selectedService.value.yesterday_inbound_up = calculateTotalTraffic(yesterdayResponse.data.data.upload_data)
+        selectedService.value.yesterday_inbound_down = calculateTotalTraffic(yesterdayResponse.data.data.download_data)
+      }
+      
+      // 加载近3日流量数据
+      const last3DaysResponse = await servicesAPI.getLast3DaysTraffic(serviceId)
+      if (last3DaysResponse.data.success) {
+        selectedService.value.last3days_traffic_data = last3DaysResponse.data.data
+        selectedService.value.last3days_inbound_up = calculateTotalTraffic(last3DaysResponse.data.data.upload_data)
+        selectedService.value.last3days_inbound_down = calculateTotalTraffic(last3DaysResponse.data.data.download_data)
+      }
+    } catch (error) {
+      console.error('加载时间范围流量数据失败:', error)
+    }
+  }
+  
+  // 计算总流量
+  const calculateTotalTraffic = (trafficArray) => {
+    if (!trafficArray || !Array.isArray(trafficArray)) return 0
+    return trafficArray.reduce((sum, current) => sum + current, 0)
   }
 
   const deleteService = async (serviceId) => {
@@ -105,4 +153,4 @@ export const useServicesStore = defineStore('services', () => {
     stopAutoRefresh,
     forceRefresh
   }
-}) 
+})

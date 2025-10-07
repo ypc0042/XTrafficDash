@@ -35,6 +35,9 @@ func (api *DatabaseAPI) RegisterRoutes(r *gin.Engine) {
 
 		// 流量统计
 		dbGroup.GET("/traffic/history", api.GetTrafficHistory)
+		dbGroup.GET("/traffic/today/:service_id", api.GetTodayTraffic)
+		dbGroup.GET("/traffic/yesterday/:service_id", api.GetYesterdayTraffic)
+		dbGroup.GET("/traffic/last3days/:service_id", api.GetLast3DaysTraffic)
 		dbGroup.GET("/traffic/weekly/:service_id", api.GetWeeklyTraffic)
 		dbGroup.GET("/traffic/monthly/:service_id", api.GetMonthlyTraffic)
 
@@ -304,6 +307,81 @@ func (api *DatabaseAPI) GetTrafficByDays(c *gin.Context, days int) {
 		"message": fmt.Sprintf("获取%d天流量数据成功", days),
 		"data":    result,
 	})
+}
+
+// 获取服务1天流量数据（今日）
+func (api *DatabaseAPI) GetTodayTraffic(c *gin.Context) {
+	api.GetTrafficByDays(c, 1)
+}
+
+// 获取服务1天流量数据（昨日）
+func (api *DatabaseAPI) GetYesterdayTraffic(c *gin.Context) {
+	// 获取服务ID
+	serviceIDStr := c.Param("service_id")
+	serviceID, err := strconv.Atoi(serviceIDStr)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"success": false,
+			"error":   "无效的服务ID",
+		})
+		return
+	}
+
+	// 获取昨天的日期
+	yesterday := time.Now().In(time.Local).AddDate(0, 0, -1).Format("2006-01-02")
+	
+	// 查询昨天的流量数据
+	historyQuery := `
+		SELECT 
+			ith.date,
+			SUM(ith.daily_up) as total_up,
+			SUM(ith.daily_down) as total_down
+		FROM inbound_traffic_history ith
+		WHERE ith.service_id = ? AND ith.date = ?
+		GROUP BY ith.date
+	`
+	
+	var date string
+	var totalUp, totalDown int64
+	err = api.db.db.QueryRow(historyQuery, serviceID, yesterday).Scan(&date, &totalUp, &totalDown)
+	if err != nil && err != sql.ErrNoRows {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   "查询昨日流量失败: " + err.Error(),
+		})
+		return
+	}
+	
+	if err == sql.ErrNoRows {
+		// 没有数据，返回零值
+		totalUp, totalDown = 0, 0
+		date = yesterday
+	}
+	
+	// 构造返回数据
+	dates := []string{date}
+	uploadData := []int64{totalUp}
+	downloadData := []int64{totalDown}
+	
+	result := gin.H{
+		"dates":         dates,
+		"upload_data":   uploadData,
+		"download_data": downloadData,
+		"yesterday_dates": dates,
+		"yesterday_upload_data": uploadData,
+		"yesterday_download_data": downloadData,
+	}
+	
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "获取昨日流量数据成功",
+		"data":    result,
+	})
+}
+
+// 获取服务3天流量数据
+func (api *DatabaseAPI) GetLast3DaysTraffic(c *gin.Context) {
+	api.GetTrafficByDays(c, 3)
 }
 
 // 获取服务7天流量数据

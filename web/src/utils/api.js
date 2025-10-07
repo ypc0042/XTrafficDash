@@ -46,8 +46,23 @@ export const servicesAPI = {
   // 获取服务详情
   getServiceDetail: (serviceId) => api.get(`/db/services/${serviceId}/traffic`),
   
+  // 获取服务详情（带时间范围）
+  getServiceDetailWithTimeRange: (serviceId, timeRange) => api.get(`/db/services/${serviceId}/traffic?timeRange=${timeRange}`),
+  
+  // 获取历史流量数据
+  getHistoryTraffic: (serviceId, startDate, endDate) => api.get(`/db/services/${serviceId}/history?startDate=${startDate}&endDate=${endDate}`),
+  
   // 删除服务
   deleteService: (serviceId) => api.delete(`/db/services/${serviceId}`),
+  
+  // 获取今日流量数据
+  getTodayTraffic: (serviceId) => api.get(`/db/traffic/today/${serviceId}`),
+  
+  // 获取昨日流量数据
+  getYesterdayTraffic: (serviceId) => api.get(`/db/traffic/yesterday/${serviceId}`),
+  
+  // 获取近3日流量数据
+  getLast3DaysTraffic: (serviceId) => api.get(`/db/traffic/last3days/${serviceId}`),
   
   // 获取7天流量数据
   getWeeklyTraffic: (serviceId) => api.get(`/db/traffic/weekly/${serviceId}`),
@@ -85,4 +100,4 @@ export const authAPI = {
   verifyToken: () => api.get('/auth/verify')
 }
 
-export default api 
+export default api

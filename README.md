@@ -92,13 +92,58 @@ systemctl restart hysteria-server.service
 
 
 
+## 📊 数据管理
+
+### 历史数据自动清理
+
+系统会自动保留最近31天的历史数据，超过31天的数据将被自动清理。清理任务每天凌晨3点自动执行，无需手动操作。
+
 ## 🚀 更新（数据库迁移）
+
+### 一键升级方式（推荐）
+
+```bash
+# 下载升级脚本
+wget -O upgrade.sh https://raw.githubusercontent.com/sanqi377/XTrafficDash/main/upgrade.sh
+
+# 添加执行权限
+chmod +x upgrade.sh
+
+# 执行升级脚本
+./upgrade.sh
+```
+
+升级脚本会自动执行以下操作：
+1. 备份当前数据库
+2. 停止并删除旧容器
+3. 拉取最新镜像
+4. 重新启动容器
+5. 检查容器状态
+
+### 手动更新方式
+
 ```bash
 # 1. 停止正在运行的容器
 docker stop xtrafficdash
 
 # 2. 删除旧容器（不会影响备份的数据库文件）
-docker rm xtrafficdash  
+docker rm xtrafficdash
+
+# 3. 拉取最新镜像
+docker pull sanqi37/xtrafficdash:latest
+
+# 4. 重新启动容器
+docker run -d \
+  --name xtrafficdash \
+  -p 37022:37022 \
+  -v /usr/xtrafficdash/data:/app/data \
+  -e TZ=Asia/Shanghai \
+  -e PASSWORD=admin123 \
+  --log-opt max-size=5m \
+  --log-opt max-file=3 \
+  --restart unless-stopped \
+  sanqi37/xtrafficdash:latest
+```
 
 # 3. 删除旧镜像（确保拉取最新镜像）
 docker rmi sanqi37/xtrafficdash  

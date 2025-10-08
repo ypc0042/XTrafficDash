@@ -17,7 +17,7 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-info}
       - TZ=Asia/Shanghai 
     networks:
-      - xui_network
+      - xtrafficdash_network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:37022/health"]
       interval: 30s
@@ -32,4 +32,4 @@ volumes:
 
 networks:
   xtrafficdash_network:
-    driver: bridge 
+    driver: bridge

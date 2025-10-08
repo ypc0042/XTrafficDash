@@ -473,8 +473,12 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 			END as status,
 			COALESCE(it_counts.inbound_count, 0) as inbound_count,
 			COALESCE(ct_counts.client_count, 0) as client_count,
-			COALESCE(today_traffic.today_up, 0) as today_inbound_up,
-			COALESCE(today_traffic.today_down, 0) as today_inbound_down
+			COALESCE(today_traffic.today_up, 0) as today_up,
+			COALESCE(today_traffic.today_down, 0) as today_down,
+			COALESCE(yesterday_traffic.yesterday_up, 0) as yesterday_up,
+			COALESCE(yesterday_traffic.yesterday_down, 0) as yesterday_down,
+			COALESCE(last3days_traffic.last3days_up, 0) as last3days_up,
+			COALESCE(last3days_traffic.last3days_down, 0) as last3days_down
 		FROM
 			services s
 		LEFT JOIN (
@@ -486,6 +490,12 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 		LEFT JOIN (
 			SELECT service_id, SUM(daily_up) as today_up, SUM(daily_down) as today_down FROM inbound_traffic_history WHERE date = DATE('now', 'localtime') GROUP BY service_id
 		) today_traffic ON s.id = today_traffic.service_id
+		LEFT JOIN (
+			SELECT service_id, SUM(daily_up) as yesterday_up, SUM(daily_down) as yesterday_down FROM inbound_traffic_history WHERE date = DATE('now', '-1 day', 'localtime') GROUP BY service_id
+		) yesterday_traffic ON s.id = yesterday_traffic.service_id
+		LEFT JOIN (
+			SELECT service_id, SUM(daily_up) as last3days_up, SUM(daily_down) as last3days_down FROM inbound_traffic_history WHERE date >= DATE('now', '-2 days', 'localtime') AND date <= DATE('now', 'localtime') GROUP BY service_id
+		) last3days_traffic ON s.id = last3days_traffic.service_id
 		ORDER BY
 			s.last_seen DESC;
 	`)
@@ -500,22 +510,26 @@ func (d *Database) GetServiceSummary() ([]map[string]interface{}, error) {
 		var ipAddress, lastSeen, status string
 		var customName sql.NullString
 		var inboundCount, clientCount int
-		var todayInboundUp, todayInboundDown int64
+		var todayUp, todayDown, yesterdayUp, yesterdayDown, last3daysUp, last3daysDown int64
 
-		err := rows.Scan(&id, &ipAddress, &customName, &lastSeen, &status, &inboundCount, &clientCount, &todayInboundUp, &todayInboundDown)
+		err := rows.Scan(&id, &ipAddress, &customName, &lastSeen, &status, &inboundCount, &clientCount, &todayUp, &todayDown, &yesterdayUp, &yesterdayDown, &last3daysUp, &last3daysDown)
 		if err != nil {
 			return nil, err
 		}
 		result := map[string]interface{}{
-			"id":                 id,
-			"ip":                 ipAddress,
-			"custom_name":        customName.String,
-			"last_seen":          lastSeen,
-			"status":             status,
-			"inbound_count":      inboundCount,
-			"client_count":       clientCount,
-			"today_inbound_up":   todayInboundUp,
-			"today_inbound_down": todayInboundDown,
+			"id":            id,
+			"ip":            ipAddress,
+			"custom_name":   customName.String,
+			"last_seen":     lastSeen,
+			"status":        status,
+			"inbound_count": inboundCount,
+			"client_count":  clientCount,
+			"today_up":      todayUp,
+			"today_down":    todayDown,
+			"yesterday_up":  yesterdayUp,
+			"yesterday_down": yesterdayDown,
+			"last3days_up":  last3daysUp,
+			"last3days_down": last3daysDown,
 		}
 		results = append(results, result)
 	}

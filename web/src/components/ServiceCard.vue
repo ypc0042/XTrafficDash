@@ -121,11 +121,11 @@ const getTrafficValue = (direction) => {
   
   switch (selectedTimeRange.value) {
     case 'today':
-      return direction === 'up' ? props.service.today_inbound_up || 0 : props.service.today_inbound_down || 0
+      return direction === 'up' ? (props.service.today_up || 0) : (props.service.today_down || 0)
     case 'yesterday':
-      return direction === 'up' ? props.service.yesterday_inbound_up || 0 : props.service.yesterday_inbound_down || 0
+      return direction === 'up' ? (props.service.yesterday_up || 0) : (props.service.yesterday_down || 0)
     case 'last3days':
-      return direction === 'up' ? props.service.last3days_inbound_up || 0 : props.service.last3days_inbound_down || 0
+      return direction === 'up' ? (props.service.last3days_up || 0) : (props.service.last3days_down || 0)
     default:
       return 0
   }

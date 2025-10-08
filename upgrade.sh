@@ -1,7 +1,16 @@
 #!/bin/bash
 
 # XTrafficDash 一键升级脚本
+# 使用方法: ./upgrade.sh [docker-image-name]
+# 例如: ./upgrade.sh yourusername/xtrafficdash:latest
+
 echo "===== XTrafficDash 一键升级脚本 ====="
+
+# 设置默认镜像名，可通过参数覆盖
+DEFAULT_IMAGE="sanqi37/xtrafficdash:latest"
+IMAGE_NAME="${1:-$DEFAULT_IMAGE}"
+
+echo "使用镜像: $IMAGE_NAME"
 echo "正在停止当前容器..."
 
 # 获取当前目录
@@ -34,7 +43,7 @@ docker rm xtrafficdash
 
 # 拉取最新镜像
 echo "拉取最新镜像..."
-docker pull sanqi37/xtrafficdash:latest
+docker pull "$IMAGE_NAME"
 
 # 重新启动容器
 echo "重新启动容器..."
@@ -52,7 +61,7 @@ else
       --log-opt max-size=5m \
       --log-opt max-file=3 \
       --restart unless-stopped \
-      sanqi37/xtrafficdash:latest
+      "$IMAGE_NAME"
 fi
 
 # 检查容器是否成功启动
